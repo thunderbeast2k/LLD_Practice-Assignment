@@ -1,0 +1,32 @@
+interface PricingStrategy
+  + calculateFee(ticket): Money
+
+class HourlyPricing implements PricingStrategy
+  + calculateFee(ticket): Money
+
+class FlatRatePricing implements PricingStrategy
+  + calculateFee(ticket): Money
+
+abstract class Vehicle
+  - plate: String
+  + type(): VehicleType
+
+class Car extends Vehicle
+class Motorcycle extends Vehicle
+
+class ParkingSpot
+  - vehicle: Vehicle
+  + canFit(vehicle)
+  + occupy(vehicle)
+  + vacate()
+
+class Ticket
+  - vehicle: Vehicle
+  - spot: ParkingSpot
+
+class ParkingLot
+  - spots: List<ParkingSpot>
+  - pricing: PricingStrategy
+  + park(vehicle): Ticket
+  + unpark(ticket): Money
+  + isFull(): bool

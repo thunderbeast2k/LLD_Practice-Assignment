@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLD Practice</title>
+<style>
+:root{--bg:#f7f7f9;--card:#fff;--ink:#1d2330;--mute:#677084;--line:#e3e6ee;--acc:#4f46e5;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
+@media(prefers-color-scheme:dark){:root{--bg:#12141a;--card:#1b1f29;--ink:#e8eaf0;--mute:#9aa3b5;--line:#2c3242;--acc:#8b86ff;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;gap:16px;align-items:center;padding:12px 24px;background:var(--card);border-bottom:1px solid var(--line)}
+header b{font-size:17px}header a{color:var(--mute);cursor:pointer;text-decoration:none}header a:hover{color:var(--acc)}
+main{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.grid .card{cursor:pointer;margin:0}.grid .card:hover{border-color:var(--acc)}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.badge.COMPLETED{color:var(--ok)}.badge.PARTIAL{color:var(--warn)}.badge.FAILED{color:var(--bad)}.badge.EVALUATING,.badge.SUBMITTED{color:var(--acc)}
+button{background:var(--acc);color:#fff;border:0;border-radius:7px;padding:8px 14px;font:inherit;cursor:pointer}
+button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}button:disabled{opacity:.5;cursor:default}
+textarea,select{width:100%;font:13px/1.45 ui-monospace,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:10px}
+textarea.code{min-height:360px}textarea.rat{min-height:70px;font-family:inherit}
+.two{display:grid;grid-template-columns:minmax(260px,1fr) 2fr;gap:16px}@media(max-width:800px){.two{grid-template-columns:1fr}}
+.bar{height:8px;background:var(--line);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.f{border-left:4px solid var(--line);padding:6px 12px;margin:10px 0}.f.ISSUE{border-color:var(--bad)}.f.SUGGESTION{border-color:var(--warn)}.f.STRENGTH{border-color:var(--ok)}
+.f small{color:var(--mute)}.big{font-size:44px;font-weight:700}.err{color:var(--bad)}.mute{color:var(--mute)}
+.delta.up{color:var(--ok)}.delta.down{color:var(--bad)}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+tr.click{cursor:pointer}tr.click:hover{background:var(--bg)}ul{padding-left:20px;margin:6px 0}
+</style></head><body>
+<header><b>LLD Practice</b><a onclick="go('#/')">Problems</a><a onclick="go('#/history')">My attempts</a></header>
+<main id="app"></main>
+<script>
+const LABELS={coverage:"Requirements coverage",responsibilities:"Responsibilities",abstraction:"Abstraction & extensibility",relationships:"Relationships",naming:"Naming"};
+const learner=localStorage.lld_learner||(localStorage.lld_learner="l-"+Math.random().toString(36).slice(2,10));
+const $=s=>document.querySelector(s), app=$("#app"); let poll=null, formats=[];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(m,p,b){const r=await fetch("/api"+p,{method:m,headers:{"Content-Type":"application/json","X-Learner-Id":learner},body:b?JSON.stringify(b):undefined});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
+const go=h=>{location.hash=h};
+const dt=s=>new Date(s).toLocaleString();
+const delta=d=>d==null?"":`<span class="delta ${d>=0?"up":"down"}">${d>=0?"▲ +":"▼ "}${d}</span>`;
+function show(html){app.innerHTML=html}
+function toast(msg){const e=$("#msg");if(e)e.innerHTML=`<span class="err">${esc(msg)}</span>`}
+
+async function home(){
+  const ps=await api("GET","/problems");
+  show(`<h2>Pick a problem</h2><p class="mute">Choose → design → submit → get feedback → review → try again.</p><div class="grid">`+
+   ps.map(p=>`<div class="card" onclick="go('#/problem/${p.id}')"><div class="row"><b>${esc(p.title)}</b><span class="badge">${esc(p.difficulty)}</span></div><p class="mute">${esc(p.summary)}</p></div>`).join("")+"</div>");
+}
+async function problem(id){
+  const [p,h]=await Promise.all([api("GET","/problems/"+id),api("GET","/attempts?problem_id="+id)]);
+  show(`<h2>${esc(p.title)} <span class="badge">${esc(p.difficulty)}</span></h2><div class="card"><p>${esc(p.summary)}</p>
+   <b>Requirements</b><ul>${p.requirements.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>
+   <b>Assumptions</b><ul>${p.assumptions.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>
+   <b>Think before you design</b><ul>${p.thinking_prompts.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>
+   <div class="row"><button id="start">Start attempt ${h.length+1}</button><span id="msg"></span></div></div>
+   <h3>Previous attempts</h3>${histTable(h)||'<p class="mute">None yet.</p>'}`);
+  $("#start").onclick=async()=>{try{const a=await api("POST","/attempts",{problem_id:id});go("#/attempt/"+a.id)}catch(e){toast(e.message)}};
+}
+function histTable(rows){
+  if(!rows.length)return"";
+  return `<div class="card"><table><tr><th>#</th><th>Problem</th><th>Status</th><th>Score</th><th>vs previous</th><th>When</th></tr>`+
+   rows.map(r=>`<tr class="click" onclick="go('#/attempt/${r.id}')"><td>${r.number}</td><td>${esc(r.problem_title)}</td><td><span class="badge ${r.status}">${r.status}</span></td>
+   <td>${r.overall??"–"}</td><td>${delta(r.delta)}</td><td class="mute">${dt(r.created_at)}</td></tr>`).join("")+"</table></div>";
+}
+async function history(){const rows=await api("GET","/attempts");show(`<h2>My attempts</h2>`+(histTable(rows)||'<p class="mute">No attempts yet.</p>'))}
+
+async function attempt(id){
+  if(!formats.length)formats=await api("GET","/formats");
+  const a=await api("GET","/attempts/"+id), p=await api("GET","/problems/"+a.problem_id);
+  render(a,p);
+  clearTimeout(poll);
+  if(["SUBMITTED","EVALUATING"].includes(a.status))poll=setTimeout(()=>{if(location.hash==="#/attempt/"+id)attempt(id)},1000);
+}
+function render(a,p){
+  const draft=a.status==="DRAFT", dis=draft?"":"disabled";
+  const fmt=formats.find(f=>f.id===a.format)||formats[0];
+  const content=a.content||fmt.template;
+  show(`<div class="row"><h2>${esc(p.title)} · attempt ${a.number} <span class="badge ${a.status}">${a.status}</span></h2><span id="msg"></span></div>
+  <div class="two"><div><div class="card"><b>Requirements</b><ul>${p.requirements.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>
+    <b>Think about</b><ul>${p.thinking_prompts.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div></div>
+   <div><div class="card"><label>Format <select id="fmt" ${dis}>${formats.map(f=>`<option value="${f.id}" ${f.id===a.format?"selected":""}>${esc(f.label)}</option>`).join("")}</select></label>
+    <p class="mute" id="fdesc">${esc(fmt.description)}</p>
+    <textarea id="code" class="code" spellcheck="false" ${dis}>${esc(content)}</textarea>
+    <p><b>Rationale &amp; trade-offs</b> <span class="mute">(assumptions, patterns used and why)</span></p>
+    <textarea id="rat" class="rat" ${dis}>${esc(a.rationale)}</textarea>
+    <div class="row" style="margin-top:10px">
+      ${draft?`<span><button class="sec" id="save">Save draft</button> <button id="submit">Submit for feedback</button></span>`:
+        `<span><button id="again">Try again from this design</button> ${["FAILED","PARTIAL"].includes(a.status)?'<button class="sec" id="retry">Retry evaluation</button>':""}</span>`}
+    </div></div>${feedbackHtml(a)}</div></div>`);
+  if(draft){
+    const body=()=>({content:$("#code").value,format:$("#fmt").value,rationale:$("#rat").value});
+    $("#fmt").onchange=()=>{const f=formats.find(x=>x.id===$("#fmt").value);$("#fdesc").textContent=f.description;if(!a.content||$("#code").value===fmt.template)$("#code").value=f.template};
+    $("#save").onclick=async()=>{try{await api("PUT","/attempts/"+a.id,body());$("#msg").innerHTML='<span class="mute">Draft saved</span>'}catch(e){toast(e.message)}};
+    $("#submit").onclick=async()=>{try{await api("PUT","/attempts/"+a.id,body());await api("POST","/attempts/"+a.id+"/submit");attempt(a.id)}catch(e){toast(e.message)}};
+  }else{
+    $("#again").onclick=async()=>{try{const n=await api("POST","/attempts",{problem_id:a.problem_id,based_on:a.id});go("#/attempt/"+n.id)}catch(e){toast(e.message)}};
+    const r=$("#retry");if(r)r.onclick=async()=>{try{await api("POST","/attempts/"+a.id+"/retry");attempt(a.id)}catch(e){toast(e.message)}};
+  }
+}
+function feedbackHtml(a){
+  if(a.status==="SUBMITTED"||a.status==="EVALUATING")return`<div class="card">⏳ Evaluating your design…</div>`;
+  if(a.status==="FAILED")return`<div class="card"><b class="err">Evaluation failed</b><p>${esc(a.error)}</p><p class="mute">Your design is saved. Retry, or start a new attempt.</p></div>`;
+  const fb=a.feedback;if(!fb)return"";
+  const prev=a.previous;
+  const bars=Object.entries(fb.scores).map(([k,v])=>{const d=prev&&prev.scores[k]!=null?v-prev.scores[k]:null;
+    return`<div style="margin:8px 0"><div class="row"><span>${LABELS[k]||k}</span><span>${v} ${delta(d)}</span></div><div class="bar"><i style="width:${v}%"></i></div></div>`}).join("");
+  const groups=["ISSUE","SUGGESTION","STRENGTH"].map(sev=>{const fs=fb.findings.filter(f=>f.severity===sev);if(!fs.length)return"";
+    const title={ISSUE:"To fix",SUGGESTION:"To consider",STRENGTH:"Going well"}[sev];
+    return`<h4>${title} (${fs.length})</h4>`+fs.map(f=>`<div class="f ${sev}"><b>${esc(f.title)}</b> ${f.source==="ai"?'<span class="badge">AI</span>':""}<br>${esc(f.detail)}
+     ${f.suggestion?`<br><small>💡 ${esc(f.suggestion)}</small>`:""}${f.evidence?`<br><small>Evidence: ${esc(f.evidence)}</small>`:""}</div>`).join("")}).join("");
+  return`<div class="card"><div class="row"><div><div class="big">${fb.overall}<small class="mute">/100</small> ${prev?delta(fb.overall-prev.overall):""}</div>
+    <span class="mute">${prev?`vs attempt ${prev.number} (${prev.overall})`:"first scored attempt"}</span></div></div><p>${esc(fb.summary)}</p>${bars}</div>
+   ${fb.warnings.length?`<div class="card"><b class="err">Heads up</b><ul>${fb.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div>`:""}
+   <div class="card">${groups}<hr style="border-color:var(--line)">${fb.notes.map(n=>`<p class="mute">${esc(n)}</p>`).join("")}</div>`;
+}
+async function route(){clearTimeout(poll);const h=location.hash||"#/";
+  try{ if(h.startsWith("#/problem/"))await problem(h.slice(10)); else if(h.startsWith("#/attempt/"))await attempt(h.slice(10)); else if(h==="#/history")await history(); else await home();}
+  catch(e){show(`<div class="card err">${esc(e.message)}</div>`)}}
+addEventListener("hashchange",route);route();
+</script></body></html>
